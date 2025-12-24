@@ -2,8 +2,8 @@ import asyncio
 from aiogram import Bot, Dispatcher, types, executor
 from flyerapi import Flyer
 
-API_TOKEN = "ВАШ_TELEGRAM_TOKEN"       # Ваш токен Telegram-бота
-FLYER_API_KEY = "ВАШ_FLYERAPI_KEY"     # API ключ FlyerAPI
+API_TOKEN = "8389664932:AAHw-vE5o52ODbQgUPcHf5CsSlhAIls_vDE"       # Ваш токен Telegram-бота
+FLYER_API_KEY = "FL-JCQcno-ZEliXE-fQqxRr-rfbkQS"     # API ключ FlyerAPI
 
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher(bot)
