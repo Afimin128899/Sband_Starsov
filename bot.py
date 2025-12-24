@@ -1,85 +1,87 @@
-import logging
-import os
-from aiogram import Bot, Dispatcher, types
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
-from aiogram.filters import Command
+import asyncio
+from aiogram import Bot, Dispatcher, types, executor
 from flyerapi import Flyer
-from dotenv import load_dotenv
 
-load_dotenv()
-
-API_TOKEN = os.getenv("BOT_TOKEN")
-FLYER_KEY = os.getenv("FLYER_KEY")
-
-logging.basicConfig(level=logging.INFO)
+API_TOKEN = "ВАШ_TELEGRAM_TOKEN"       # Ваш токен Telegram-бота
+FLYER_API_KEY = "ВАШ_FLYERAPI_KEY"     # API ключ FlyerAPI
 
 bot = Bot(token=API_TOKEN)
-dp = Dispatcher()
+dp = Dispatcher(bot)
 
-flyer = Flyer(FLYER_KEY)
+flyer = Flyer(FLYER_API_KEY)
 
-@dp.message(Command("start"))
-async def cmd_start(message: types.Message):
-    await message.answer(
-        "Привет! Я бот с заданиями.\n"
-        "Нажми /tasks чтобы получить задания."
-    )
+# Главное меню (Reply Keyboard)
+def main_menu():
+    keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    keyboard.add("Задания", "Профиль")
+    return keyboard
 
-@dp.message(Command("tasks"))
-async def send_tasks(message: types.Message):
+# Кнопка Назад (Reply Keyboard)
+def back_button():
+    keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    keyboard.add("Назад")
+    return keyboard
+
+# /start
+@dp.message_handler(commands=["start"])
+async def start_handler(message: types.Message):
+    await message.answer("Привет! Выберите действие:", reply_markup=main_menu())
+
+# Показ заданий
+@dp.message_handler(lambda m: m.text == "Задания")
+async def show_tasks(message: types.Message):
     user_id = message.from_user.id
-    language = message.from_user.language_code or "en"
+    language_code = message.from_user.language_code
 
-    try:
-        tasks = await flyer.get_tasks(user_id=user_id, language_code=language, limit=5)
-    except Exception as e:
-        logging.error(f"Error fetching tasks: {e}")
-        await message.reply("Ошибка при получении заданий.")
-        return
-
+    tasks = await flyer.get_tasks(user_id=user_id, language_code=language_code, limit=5)
     if not tasks:
-        await message.reply("Заданий нет 😕 Попробуй позже.")
+        await message.answer("Нет доступных заданий.", reply_markup=back_button())
         return
 
-    keyboard = InlineKeyboardMarkup(row_width=1)
-    for t in tasks:
-        sig = t.get("signature")
-        desc = t.get("text", "Задание")
-        btn = InlineKeyboardButton(
-            text=f"Выполнить: {desc[:30]}...",
-            callback_data=f"task_{sig}"
-        )
-        keyboard.add(btn)
+    for task in tasks:
+        signature = task.get("signature")
 
-    await message.answer("Выбери задание:", reply_markup=keyboard)
+        keyboard = types.InlineKeyboardMarkup()
+        keyboard.add(types.InlineKeyboardButton(
+            text="Отметить выполненным", callback_data=f"mark_{signature}"
+        ))
 
-@dp.callback_query(lambda c: c.data.startswith("task_"))
-async def handle_task_click(callback: types.CallbackQuery):
-    user_id = callback.from_user.id
-    signature = callback.data.split("_", 1)[1]
+        text = f"📌 {task.get('title', 'Без названия')}\n{task.get('description', '')}"
+        await message.answer(text, reply_markup=keyboard)
 
-    await callback.answer()
+    await message.answer("Нажмите Назад для возврата в меню", reply_markup=back_button())
 
-    try:
-        status = await flyer.check_task(user_id=user_id, signature=signature)
-    except Exception as e:
-        logging.error(f"Error checking task status: {e}")
-        await bot.send_message(user_id, "Не удалось проверить задание.")
-        return
+# Отметка задания как выполненного
+@dp.callback_query_handler(lambda c: c.data.startswith("mark_"))
+async def mark_task(call: types.CallbackQuery):
+    signature = call.data.replace("mark_", "")
+    user_id = call.from_user.id
 
-    done = status.get("done", False)
-    reward = status.get("reward", 0)
-
-    if done:
-        await bot.send_message(user_id, f"✔️ Задание выполнено! Награда: {reward}")
+    status = await flyer.check_task(user_id=user_id, signature=signature)
+    if status and status.get("status") == "completed":
+        await call.answer("Задание подтверждено выполненным 👍", show_alert=True)
     else:
-        await bot.send_message(user_id, "🕒 Задание ещё не выполнено. Попробуй позже.")
+        await call.answer("Задание ещё не выполнено 😕", show_alert=True)
 
-@dp.message()
-async def fallback(message: types.Message):
-    await message.reply("Используйте /tasks чтобы получить задания.")
+# Профиль пользователя
+@dp.message_handler(lambda m: m.text == "Профиль")
+async def profile_handler(message: types.Message):
+    user_id = message.from_user.id
+    tasks = await flyer.get_tasks(user_id=user_id, language_code=message.from_user.language_code, limit=50)
+    completed = sum(1 for t in tasks if t.get("completed")) if tasks else 0
+
+    text = (
+        f"Профиль:\n"
+        f"Пользователь: {message.from_user.full_name}\n"
+        f"Выполненные задания: {completed}"
+    )
+    await message.answer(text, reply_markup=back_button())
+
+# Назад в главное меню
+@dp.message_handler(lambda m: m.text == "Назад")
+async def back_handler(message: types.Message):
+    await message.answer("Главное меню:", reply_markup=main_menu())
 
 if __name__ == "__main__":
-    import asyncio
-    asyncio.run(dp.start_polling(bot))
+    executor.start_polling(dp, skip_updates=True)
     
