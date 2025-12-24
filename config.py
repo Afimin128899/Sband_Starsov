@@ -1,0 +1,7 @@
+BOT_TOKEN = "ВАШ_TELEGRAM_BOT_TOKEN"
+BOT_USERNAME = "SbandStarsBot"
+FLYER_KEY = "ВАШ_FLYER_API_KEY"
+
+SUBSCRIBE_REWARD = 0.25
+MIN_WITHDRAW = 1.0
+DB_URL = "sqlite:///sband_stars.db"
